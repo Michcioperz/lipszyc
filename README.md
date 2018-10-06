@@ -1,0 +1,3 @@
+# lipszyc
+
+WolneLektury.pl scraper
