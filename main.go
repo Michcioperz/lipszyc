@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"path"
 	"time"
+
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 type JsonURL struct {
@@ -51,31 +52,31 @@ type BookEssential struct {
 }
 
 type Tag struct {
-	Url JsonURL `json:"url"` // human readable page
+	Url  JsonURL `json:"url"`  // human readable page
 	Href JsonURL `json:"href"` // further API details
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	Name string  `json:"name"`
+	Slug string  `json:"slug"`
 }
 
 type BookDetails struct {
 	Authors []Tag `json:"authors"`
-	Epochs []Tag `json:"epochs"`
-	Kinds []Tag `json:"kinds"`
-	Genres []Tag `json:"genres"`
+	Epochs  []Tag `json:"epochs"`
+	Kinds   []Tag `json:"kinds"`
+	Genres  []Tag `json:"genres"`
 
-	Slug string `json:"slug"`
-	Title string `json:"title"`
-	Parent *BookEssential `json:"parent,omitempty"`
+	Slug     string          `json:"slug"`
+	Title    string          `json:"title"`
+	Parent   *BookEssential  `json:"parent,omitempty"`
 	Children []BookEssential `json:"children,omitempty"`
-	URL JsonURL `json:"url"` // human readable page
+	URL      JsonURL         `json:"url"` // human readable page
 
-	Txt JsonURL `json:"txt,omitempty"`
-	Xml JsonURL `json:"xml,omitempty"`
+	Txt  JsonURL `json:"txt,omitempty"`
+	Xml  JsonURL `json:"xml,omitempty"`
 	Html JsonURL `json:"html,omitempty"`
-	Fb2 JsonURL `json:"fb2,omitempty"`
+	Fb2  JsonURL `json:"fb2,omitempty"`
 	Epub JsonURL `json:"epub,omitempty"`
 	Mobi JsonURL `json:"mobi,omitempty"`
-	Pdf JsonURL `json:"pdf,omitempty"`
+	Pdf  JsonURL `json:"pdf,omitempty"`
 
 	// TODO: add other side files
 }
@@ -104,8 +105,6 @@ var (
 )
 
 func cachedFile(filePath string, originUrl *url.URL) (content []byte, err error) {
-	log.Print("needed:", filePath)
-
 	// TODO: redownload at some chance
 
 	content, err = ioutil.ReadFile(filePath)
@@ -185,32 +184,30 @@ func (b BookEssential) ObtainBook() (book BookDetails) {
 func (b BookDetails) Files() (f map[string]JsonURL) {
 	f = make(map[string]JsonURL)
 	if b.Txt.String() != "" {
-		f[b.Slug + ".txt"] = b.Txt
+		f[b.Slug+".txt"] = b.Txt
 	}
 	if b.Xml.String() != "" {
-		f[b.Slug + ".xml"] = b.Xml
+		f[b.Slug+".xml"] = b.Xml
 	}
 	if b.Html.String() != "" {
-		f[b.Slug + ".html"] = b.Html
+		f[b.Slug+".html"] = b.Html
 	}
 	if b.Fb2.String() != "" {
-		f[b.Slug + ".fb2"] = b.Fb2
+		f[b.Slug+".fb2"] = b.Fb2
 	}
 	if b.Epub.String() != "" {
-		f[b.Slug + ".epub"] = b.Epub
+		f[b.Slug+".epub"] = b.Epub
 	}
 	if b.Mobi.String() != "" {
-		f[b.Slug + ".mobi"] = b.Mobi
+		f[b.Slug+".mobi"] = b.Mobi
 	}
 	if b.Pdf.String() != "" {
-		f[b.Slug + ".pdf"] = b.Pdf
+		f[b.Slug+".pdf"] = b.Pdf
 	}
 	// TODO: add other side files
 
 	return
 }
-
-const routinesCount = 5
 
 func main() {
 	flag.Parse()
@@ -220,45 +217,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	booksToObtain := make(chan BookEssential, 10)
-	returningSignal := make(chan bool)
-
-	workerRoutine := func() {
-		defer func() { returningSignal <- true }()
-		for {
-			b, more := <-booksToObtain
-			if more {
-				b.ObtainBook()
-			} else {
-				return
-			}
-		}
+	progress := pb.StartNew(len(books))
+	for _, bookBase := range books {
+		bookBase.ObtainBook()
+		progress.Increment()
 	}
-
-	for i := 0; i < routinesCount; i++ {
-		go workerRoutine()
-	}
-
-	signalToExit := make(chan os.Signal)
-	signal.Notify(signalToExit, os.Interrupt)
-
-	go func() {
-		defer func() {
-			log.Print("get ready to leave")
-			close(booksToObtain)
-		}()
-		for _, bookBase := range books {
-			select {
-			case booksToObtain <- bookBase:
-			case <-signalToExit:
-				signal.Stop(signalToExit)
-				return
-			}
-		}
-	}()
-
-	for i := 0; i < routinesCount; i++ {
-		<-returningSignal
-		log.Print("worker shutdown confirmed")
-	}
+	progress.Finish()
 }
